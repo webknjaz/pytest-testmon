@@ -12,8 +12,8 @@ import textwrap
 import random
 
 import coverage
-from testmon.process_code import checksum_coverage
-from testmon.process_code import Module
+from testmon_renamed.process_code import checksum_coverage
+from testmon_renamed.process_code import Module
 
 if sys.version_info > (3,):
     buffer = memoryview
