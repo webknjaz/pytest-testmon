@@ -15,6 +15,7 @@ import random
 import coverage
 from testmon.process_code import checksum_coverage
 from testmon.process_code import Module
+import hashlib
 
 if sys.version_info > (3,):
     buffer = memoryview
@@ -146,15 +147,16 @@ class TestmonData(object):
         self.rootdir = rootdir
         self.init_connection()
         self.mtimes = {}
+        self.file_checksums = {}
         self.node_data = {}
         self.reports = {}
 
         self.lastfailed = []
 
         self.changed_files = {}
-        self.changed_node_data = {}
         self.changed_reports = {}
         self.changed_mtimes = {}
+        self.changed_file_checksums = {}
 
     def init_connection(self):
         self.datafile = os.path.join(self.rootdir, '.testmondata')
@@ -218,15 +220,18 @@ class TestmonData(object):
         self.mtimes, \
         self.node_data, \
         self.reports, \
-        self.lastfailed = self._fetch_attribute('mtimes', default={}), \
-                          self._fetch_node_data(), \
-                          self._fetch_attribute('reports', default={}), \
-                          self._fetch_attribute('lastfailed', default=[])
+        self.lastfailed, \
+        self.file_checksums = self._fetch_attribute('mtimes', default={}), \
+                              self._fetch_node_data(), \
+                              self._fetch_attribute('reports', default={}), \
+                              self._fetch_attribute('lastfailed', default=[]), \
+                              self._fetch_attribute('file_checksums', default={})
 
     def write_data(self):
         with self.connection:
             self.mtimes.update(self.changed_mtimes)
             self.reports.update(self.changed_reports)
+            self.file_checksums.update(self.changed_file_checksums)
             self._write_attribute('mtimes', self.mtimes)
             self._write_attribute('lastfailed', self.lastfailed)
             self._write_attribute('reports', self.reports)
@@ -277,13 +282,26 @@ class TestmonData(object):
 
         return self.changed_files[filename]
 
+    def checksum(self, py_file):
+        def hashfile(afile, hasher, blocksize=65536):
+            buf = afile.read(blocksize)
+            while len(buf) > 0:
+                hasher.update(buf)
+                buf = afile.read(blocksize)
+            return hasher.digest()
+
+        return hashfile(open(os.path.join(py_file, self.rootdir), 'rb'), hashlib.sha1())
+
     def read_fs(self):
         self.read_data()
         for py_file in self.file_data():
             try:
                 new_mtime = os.path.getmtime(py_file)
                 if self.mtimes.get(py_file) != new_mtime:
-                    self.parse_file(py_file, new_mtime)
+                    new_checksum = self.checksum(py_file)
+                    if self.file_checksums.get(py_file) != new_checksum:
+                        self.changed_file_checksums[py_file] = new_checksum
+                        self.parse_file(py_file, new_mtime)
             except OSError:
                 self.mtimes[py_file] = [-2]
 
